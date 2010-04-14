@@ -1,0 +1,215 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en" dir="ltr" id="html">
+<head>
+	<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+	<title>DCube_libJS Test Suite</title>
+	<link rel="Stylesheet" media="screen" type="text/css"
+				href="http://github.com/jquery/qunit/raw/master/qunit/qunit.css" />
+
+	<style type="text/css">
+		#setup {
+			padding: 1em;
+		}
+		.setup-label {
+			margin: 0 0.5em 0 2em;
+		}
+		#gobutton {
+			margin: 1em;
+		}
+	</style>
+	<script type="text/javascript" src="http://github.com/jquery/qunit/raw/master/qunit/qunit.js"></script>
+	<script type="text/javascript">
+
+stop();
+
+// Require
+function require(id) {
+  var m = Components.utils.import(
+      "resource://chrometest/resources/"+ id +".js", null);
+  return ((typeof m.exports === "object") ? m.exports : m);
+}
+
+function run_tests() {
+	var ddd = require("dcube");
+	var username = document.getElementById("username").value;
+	var passkey = document.getElementById("passkey").value;
+
+	dump("\n\n <-- start testing -->\n");
+	start();
+
+	test("import", 1, function () {
+		equals(typeof ddd, "object", "imported module");
+	});
+
+	test("debug mode", 1, function () {
+		ok(ddd.debug(true) === ddd, ".debug() is chainable");
+	});
+
+	test("domain accessor", 1, function () {
+		ok(ddd.domain("fireworks-skylight.appspot.com") === ddd, ".domain() is chainable");
+	});
+
+	test("invalid usernames", 6, function () {
+		try {
+			ddd.user("");
+		} catch (e) {
+			ok(e.constructor === ddd.stringException, "raised string exception");
+			equals(e.name, "usernameValidationError", "username validation error");
+			equals(e.message, "too short", "username too short");
+		}
+
+		try {
+			ddd.user("foo bar");
+		} catch (e) {
+			ok(e.constructor === ddd.stringException, "raised string exception");
+			equals(e.name, "usernameValidationError", "username validation error");
+			equals(e.message, "invalid characters", "invalid chars");
+		}
+	});
+
+	test("user.exists() void", 2, function () {
+		var user = ddd.user("foo"),
+			cb, eb;
+		stop();
+
+		cb = function (x) {
+			equals(x, false, "the user does not exist.");
+			start();
+		}
+
+		eb = function (x) {
+			ok(false, x +"");
+			start();
+		}
+
+		ok(user.exists(cb, eb) === user, "user.exists() is chainable.");
+	});
+
+	test("user.exists() exists", 2, function () {
+		var user = ddd.user(username),
+			cb, eb;
+		stop();
+
+		cb = function (x) {
+			equals(x, true, "the user exists.");
+			start();
+		}
+
+		eb = function (x) {
+			ok(false, x +"");
+			start();
+		}
+
+		ok(user.exists(cb, eb) === user, "user.exists() is chainable.");
+	});
+
+	test("user resolved", 2, function () {
+		equal(ddd.user("foo").remove, undefined, ".remove undefined for test user.");
+		equal(ddd.user(username).remove, undefined, ".remove undefined for admin user.");
+	});
+
+	test("user.create() ok", 3, function () {
+		var user = ddd.user("foo"),
+			cb, eb;
+		stop();
+
+		cb = function (x) {
+			equals(x.username, "foo", "got username");
+			same(x.groups, ["users"], "got groups");
+			start();
+		}
+
+		eb = function (x) {
+			ok(false, x +"");
+			start();
+		}
+
+		ok(user.create(cb, eb, "foobar") === user, "user.create() is chainable.");
+	});
+
+	test("user.get() user.update() ok", 4, function () {
+		var user = ddd.user(username),
+			cb, eb, foo;
+		stop();
+
+		function do_update(target) {
+			target.groups.push("database");
+			user.update("foo", target,
+			function (x) {
+				same(x.groups, ["users", "database"], "updated groups");
+				start();
+			},
+			function (x) {
+				ok(false, x +"");
+				start();
+			});
+		}
+
+		cb = function (x) {
+			equals(x.username, "foo", "got username");
+			same(x.groups, ["users"], "got groups");
+			do_update(x);
+		}
+
+		eb = function (x) {
+			ok(false, x +"");
+			start();
+		}
+
+		ok(user.get("foo", cb, eb, passkey) === user, "user.get() is chainable.");
+	});
+
+	test("user.remove()", 2, function () {
+		var user = ddd.user("foo");
+		stop();
+
+		function cb(x) {
+			ok(x, "user removed");
+			start();
+		}
+
+		function eb(x) {
+			ok(false, x +"");
+			start();
+		}
+
+		ok(user.remove(cb, eb) === user, "user.remove() is chainable.");
+	});
+
+	test("user.exists() user.remove()", 2, function () {
+		dump("## user.exists() user.remove()\n");
+		var user = ddd.user("foo"),
+			cb, eb;
+		stop();
+
+		cb = function (x) {
+			equals(x, false, "the user does not exist.");
+			start();
+		}
+
+		eb = function (x) {
+			ok(false, x +"");
+			start();
+		}
+
+		ok(user.exists(cb, eb) === user, "user.exists() is chainable.");
+	});
+
+}
+
+	</script>
+</head>
+
+<body id="body">
+	<h1 id="qunit-header">jMonad Test Suite</h1>
+	<h2 id="qunit-banner"></h2>
+	<div id="qunit-testrunner-toolbar"></div>
+	<div id="setup">
+		<label class="setup-label">username:</label><input id="username" type="text">
+		<label class="setup-label">passkey:</label><input id="passkey" type="password">
+		<button id="gobutton" onclick="run_tests();">RUN</button>
+	</div>
+	<h2 id="qunit-userAgent"></h2>
+	<ol id="qunit-tests"></ol>
+</body>
+</html>
