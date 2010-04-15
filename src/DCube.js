@@ -862,6 +862,14 @@ USER = function (username, passkey) {
 		self.removeDatabase = function removeDatabase() {
 			throw user_Exception("user removed");
 		};
+
+		self.getDatabase = function getDatabase() {
+			throw user_Exception("user removed");
+		};
+
+		self.updateDatabase = function updateDatabase() {
+			throw user_Exception("user removed");
+		};
 	}
 
 	// Constructor
@@ -1022,6 +1030,51 @@ USER = function (username, passkey) {
 					function (ex) { commit_txn(); promise.except(ex); });
 			});
 		};
+
+		self.getDatabase = function getDatabase(dbname) {
+			return delegate(this, function (promise) {
+				promise.progress("gettinging");
+				request("databases", dbname, "get", null,
+					function (response) {
+						commit_txn();
+						if (response.head.status === 200) {
+							promise.fulfill(response.body);
+						}
+						else if (response.head.status === 404) {
+							promise.except(user_Exception("not found"));
+						}
+						else {
+							LOG.warn("user.getDatabase(); status: "+
+								response.head.status);
+							promise.except(offline_Exception());
+						}
+					},
+					function (ex) { commit_txn(); promise.except(ex); });
+			});
+		};
+
+		self.updateDatabase = function updateDatabase(dbname, db) {
+			return delegate(this, function (promise) {
+				promise.progress("updating");
+				request("databases", dbname, "put", db,
+					function (response) {
+						commit_txn();
+						if (response.head.status === 200 ||
+								response.head.status === 201) {
+							promise.fulfill(response.body);
+						}
+						else if (response.head.status === 403) {
+							promise.except(user_Exception("forbidden"));
+						}
+						else {
+							LOG.warn("user.getDatabase(); status: "+
+								response.head.status);
+							promise.except(offline_Exception());
+						}
+					},
+					function (ex) { commit_txn(); promise.except(ex); });
+			});
+		};
 	}
 
 	// Constructor.
@@ -1071,6 +1124,14 @@ USER = function (username, passkey) {
 
 		self.removeDatabase = function removeDatabase(dbname) {
 			return delegate(this, generalize_method, "removeDatabase", [dbname]);
+		};
+
+		self.updateDatabase = function updateDatabase(dbname, db) {
+			return delegate(this, generalize_method, "updateDatabase", [dbname]);
+		};
+
+		self.getDatabase = function getDatabase(dbname, db) {
+			return delegate(this, generalize_method, "getDatabase", [dbname]);
 		};
 	}
 
@@ -1156,6 +1217,14 @@ USER = function (username, passkey) {
 
 		self.removeDatabase = function removeDatabase(dbname) {
 			return generalize_method("removeDatabase", [dbname]);
+		};
+
+		self.updateDatabase = function updateDatabase(dbname, db) {
+			return generalize_method("updateDatabase", [dbname]);
+		};
+
+		self.getDatabase = function getDatabase(dbname, db) {
+			return generalize_method("getDatabase", [dbname]);
 		};
 
 		self.init = function init(nonce, nextnonce) {

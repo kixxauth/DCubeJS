@@ -172,6 +172,32 @@ function run_tests() {
 			});
 	});
 
+	test("user.getDatabase(); user.updateDatabase()", 6, function () {
+		stop();
+		ddd.user("foo").getDatabase("foobox")(
+			function (x) {
+				equals(x.name, "foobox", "got name");
+				same(x.owner_acl, ["foo"], "got owner_acl");
+				same(x.manager_acl, [], "got manager_acl");
+				x.manager_acl.push("johndoe");
+				ddd.user("foo").updateDatabase("foobox", x)(
+					function (x) {
+						equals(x.name, "foobox", "got name");
+						same(x.owner_acl, ["foo"], "got owner_acl");
+						same(x.manager_acl, ["johndoe"], "got manager_acl");
+						start();
+					},
+					function (x) {
+						ok(false, "update exception: "+ x);
+						start();
+					});
+			},
+			function (x) {
+				ok(false, "get exception: "+ x);
+				start();
+			});
+	});
+
 	test("user.removeDatabase() ok", 1, function () {
 		stop();
 		ddd.user(username).removeDatabase("foobox")(
