@@ -124,6 +124,19 @@ function run_tests() {
 		ddd.createUser("foo", "foobar")(cb, eb, pr);
 	});
 
+	test("user.createDatabase() denied", 1, function () {
+		stop();
+		ddd.user("foo").createDatabase("foobox")(
+			function (x) {
+				ok(false, "should not succeed");
+				start();
+			},
+			function (x) {
+				equals(x.toString(), "DCubeUserError: forbidden", "forbidden: "+ x);
+				start();
+			});
+	});
+
 	test("user.get() user.update() ok", 2, function () {
 		stop();
 		function cb(user) {
@@ -146,7 +159,30 @@ function run_tests() {
 		ddd.user(username, passkey).get("foo")(cb, eb);
 	});
 
-	test("user.createDatabase() denied", 1, function () {
+	test("user.createDatabase() ok", 1, function () {
+		stop();
+		ddd.user("foo").createDatabase("foobox")(
+			function (x) {
+				equals(x.name, "foobox", "created db");
+				start();
+			},
+			function (x) {
+				ok(false, "exception: "+ x);
+				start();
+			});
+	});
+
+	test("user.removeDatabase() ok", 1, function () {
+		stop();
+		ddd.user(username).removeDatabase("foobox")(
+			function (x) {
+				ok(x, "database removed");
+				start();
+			},
+			function (x) {
+				ok(false, "exception: "+ x);
+				start();
+			});
 	});
 
 	test("user.remove()", 1, function () {
@@ -188,7 +224,7 @@ function run_tests() {
 </head>
 
 <body id="body">
-	<h1 id="qunit-header">jMonad Test Suite</h1>
+	<h1 id="qunit-header">DCube_libJS Test Suite</h1>
 	<h2 id="qunit-banner"></h2>
 	<div id="qunit-testrunner-toolbar"></div>
 	<div id="setup">

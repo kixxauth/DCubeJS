@@ -854,6 +854,14 @@ USER = function (username, passkey) {
 		self.remove = function remove() {
 			throw user_Exception("user removed");
 		};
+
+		self.createDatabase = function createDatabase() {
+			throw user_Exception("user removed");
+		};
+
+		self.removeDatabase = function removeDatabase() {
+			throw user_Exception("user removed");
+		};
 	}
 
 	// Constructor
@@ -964,6 +972,56 @@ USER = function (username, passkey) {
 					function (ex) { commit_txn(); promise.except(ex); });
 			});
 		};
+
+		self.createDatabase = function createDatabase(dbname) {
+			return delegate(this, function (promise) {
+				promise.progress("creating");
+				request("databases", dbname, "put", null,
+					function (response) {
+						commit_txn();
+						if (response.head.status === 201) {
+							promise.fulfill(response.body);
+						}
+						else if (response.head.status === 403) {
+							promise.except(user_Exception("forbidden"));
+						}
+						else if (response.head.status === 400) {
+							promise.except(user_Exception("database exists"));
+						}
+						else {
+							LOG.warn("user.createDatabase(); status: "+
+								response.head.status);
+							promise.except(offline_Exception());
+						}
+					},
+					function (ex) { commit_txn(); promise.except(ex); });
+			});
+		};
+
+		self.removeDatabase = function removeDatabase(dbname) {
+			return delegate(this, function (promise) {
+				promise.progress("removing");
+				request("databases", dbname, "delete", null,
+					function (response) {
+						commit_txn();
+						if (response.head.status === 204) {
+							promise.fulfill(true);
+						}
+						else if (response.head.status === 403) {
+							promise.except(user_Exception("forbidden"));
+						}
+						else if (response.head.status === 404) {
+							promise.except(user_Exception("not found"));
+						}
+						else {
+							LOG.warn("user.removeDatabase(); status: "+
+								response.head.status);
+							promise.except(offline_Exception());
+						}
+					},
+					function (ex) { commit_txn(); promise.except(ex); });
+			});
+		};
 	}
 
 	// Constructor.
@@ -1005,6 +1063,14 @@ USER = function (username, passkey) {
 
 		self.remove = function remove(target) {
 			return delegate(this, generalize_method, "remove", [target]);
+		};
+
+		self.createDatabase = function createDatabase(dbname) {
+			return delegate(this, generalize_method, "createDatabase", [dbname]);
+		};
+
+		self.removeDatabase = function removeDatabase(dbname) {
+			return delegate(this, generalize_method, "removeDatabase", [dbname]);
 		};
 	}
 
@@ -1082,6 +1148,14 @@ USER = function (username, passkey) {
 
 		self.remove = function remove(target) {
 			return generalize_method("remove", [target]);
+		};
+
+		self.createDatabase = function createDatabase(dbname) {
+			return generalize_method("createDatabase", [dbname]);
+		};
+
+		self.removeDatabase = function removeDatabase(dbname) {
+			return generalize_method("removeDatabase", [dbname]);
 		};
 
 		self.init = function init(nonce, nextnonce) {
