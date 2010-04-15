@@ -67,9 +67,8 @@ function run_tests() {
 		}
 	});
 
-	test("user.exists() void", 2, function () {
-		var user = ddd.user("foo"),
-			cb, eb;
+	test(".userExists() void", 1, function () {
+		var cb, eb, pr;
 		stop();
 
 		cb = function (x) {
@@ -78,16 +77,15 @@ function run_tests() {
 		}
 
 		eb = function (x) {
-			ok(false, x +"");
+			ok(false, "exception: "+ x);
 			start();
 		}
 
-		ok(user.exists(cb, eb) === user, "user.exists() is chainable.");
+		ddd.userExists("foo")(cb, eb);
 	});
 
-	test("user.exists() exists", 2, function () {
-		var user = ddd.user(username),
-			cb, eb;
+	test(".userExists() exists", 1, function () {
+		var cb, eb, pr;
 		stop();
 
 		cb = function (x) {
@@ -100,18 +98,12 @@ function run_tests() {
 			start();
 		}
 
-		ok(user.exists(cb, eb) === user, "user.exists() is chainable.");
+		ddd.userExists(username)(cb, eb);
 	});
 
-	test("user resolved", 2, function () {
-		equal(ddd.user("foo").remove, undefined, ".remove undefined for test user.");
-		equal(ddd.user(username).remove, undefined, ".remove undefined for admin user.");
-	});
-
-	test("user.create() ok", 3, function () {
-		var user = ddd.user("foo"),
-			cb, eb;
+	test(".createUser() ok", 5, function () {
 		stop();
+		var cb, eb, pr;
 
 		cb = function (x) {
 			equals(x.username, "foo", "got username");
@@ -120,47 +112,44 @@ function run_tests() {
 		}
 
 		eb = function (x) {
-			ok(false, x +"");
+			ok(false, "exception: "+ x);
 			start();
 		}
 
-		ok(user.create(cb, eb, "foobar") === user, "user.create() is chainable.");
+		pr = function (x) {
+			ok((x === "creating" || x === "checking cache" || x === "getting"),
+				"progress report: "+ x);
+		}
+
+		ddd.createUser("foo", "foobar")(cb, eb, pr);
 	});
 
-	test("user.get() user.update() ok", 4, function () {
-		var user = ddd.user(username),
-			cb, eb, foo;
+	test("user.get() user.update() ok", 2, function () {
 		stop();
-
-		function do_update(target) {
-			target.groups.push("database");
-			user.update("foo", target,
-			function (x) {
-				same(x.groups, ["users", "database"], "updated groups");
-				start();
-			},
-			function (x) {
-				ok(false, x +"");
-				start();
-			});
+		function cb(user) {
+			same(user.groups, ["users"], "got groups");
+			user.groups.push("database");
+			ddd.user(username).update("foo", user)(
+				function (x) {
+					same(user.groups, ["users", "database"], "got new groups");
+					start();
+				},
+				function (x) {
+					ok(false, "exception: "+ x);
+					start();
+				});
 		}
-
-		cb = function (x) {
-			equals(x.username, "foo", "got username");
-			same(x.groups, ["users"], "got groups");
-			do_update(x);
-		}
-
-		eb = function (x) {
-			ok(false, x +"");
+		function eb(ex) {
+			ok(false, "exception: "+ ex);
 			start();
 		}
-
-		ok(user.get("foo", cb, eb, passkey) === user, "user.get() is chainable.");
+		ddd.user(username, passkey).get("foo")(cb, eb);
 	});
 
-	test("user.remove()", 2, function () {
-		var user = ddd.user("foo");
+	test("user.createDatabase() denied", 1, function () {
+	});
+
+	test("user.remove()", 1, function () {
 		stop();
 
 		function cb(x) {
@@ -173,13 +162,11 @@ function run_tests() {
 			start();
 		}
 
-		ok(user.remove(cb, eb) === user, "user.remove() is chainable.");
+		ddd.user("foo").remove()(cb, eb);
 	});
 
-	test("user.exists() user.remove()", 2, function () {
-		dump("## user.exists() user.remove()\n");
-		var user = ddd.user("foo"),
-			cb, eb;
+	test(".userExists() removed", 1, function () {
+		var cb, eb, pr;
 		stop();
 
 		cb = function (x) {
@@ -188,11 +175,11 @@ function run_tests() {
 		}
 
 		eb = function (x) {
-			ok(false, x +"");
+			ok(false, "exception: "+ x);
 			start();
 		}
 
-		ok(user.exists(cb, eb) === user, "user.exists() is chainable.");
+		ddd.userExists("foo")(cb, eb);
 	});
 
 }

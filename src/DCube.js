@@ -193,17 +193,49 @@ exports.user = (function () {
 	return function (username, passkey) {
 		username = validate_username(username);
 
-		return PROMISE(function (fulfill, except, progress) {
-			if (!users[username]) {
-				var user = USER(username, passkey);
-				user.get()(function (data) {
-					fulfill(users[username] = user);
-				}, except, progress);
+		if (!users[username]) {
+			if (typeof passkey !== "function") {
+				passkey = validate_passkey(passkey);
 			}
-			fulfill(users[username]);
-		});
+			users[username] = USER(username, passkey);
+		}
+		return users[username];
 	};
 }());
+
+exports.userExists = function (username) {
+	username = validate_username(username);
+	return PROMISE(function (fulfill, except, progress) {
+		try {
+			REQ({
+					timeout: 7000,
+					dir: "users",
+					name: username
+				},
+				function (response) {
+					if (response.head.status === 200 ||
+							response.head.status === 401) {
+						fulfill(true);
+					}
+					else if (response.head.status === 404) {
+						fulfill(false);
+					}
+					else {
+						LOG.warn(".userExists(); response status: "+
+							response.head.status);
+						except(offline_Exception());
+					}
+				},
+				function (exception) {
+					LOG.warn(".userExists(); "+ exception);
+					except(offline_Exception());
+				});
+		} catch (e) {
+			LOG.warn(".userExists(); "+ e);
+			except(offline_Exception());
+		}
+	});
+};
 
 exports.connect = (function () {
 	var connections = {};
@@ -228,6 +260,47 @@ exports.connect = (function () {
 		});
 	};
 }());
+
+exports.createUser = function pub_createUser(username, passkey) {
+	username = validate_username(username);
+	passkey = validate_passkey(passkey);
+
+	return PROMISE(function (fulfill, except, progress) {
+		progress("creating");
+		try {
+			REQ({
+					timeout: 7000,
+					dir: "users",
+					name: username,
+					method: "put"
+				},
+				function (response) {
+					if (response.head.status === 201) {
+						exports.user(username, passkey)
+							.init(response.head.authorization[1],
+								response.head.authorization[2])(
+									function (user) {
+										user.get(username)(fulfill, except, progress);
+									});
+					}
+					else if (response.head.status === 401) {
+						except(new Error("user exists"));
+					}
+					else {
+						LOG.warn(".createUser(); status: "+ response.head.status);
+						except(offline_Exception());
+					}
+				},
+				function (exception) {
+					LOG.warn(".createUser() "+ exception);
+					except(offline_Exception());
+				});
+		} catch (e) {
+			LOG.warn(".createUser() "+ e);
+			except(offline_Exception());
+		}
+	});
+};
 
 LOG = {
 	debug: function log_debug(msg) {
@@ -703,13 +776,30 @@ CXN = function () {
 };
 
 USER = function (username, passkey) {
-	var self = {}, transaction;
+	var self = {}, transaction = null;
 
 	function user_Exception(message) {
 		var self = new Error(message || "unkown");
 		self.name = "DCubeUserError";
 		self.constructor = arguments.callee;
 		return self;
+	}
+
+	function open_txn(continuation) {
+		if (!transaction) {
+			CACHE.atomic(username)(function (txn) {
+				transaction = txn;
+				continuation();
+			});
+		}
+		else {
+			continuation();
+		}
+	}
+
+	function commit_txn() {
+		transaction("commit");
+		transaction = null;
 	}
 
 	function cnonce(passkey, nextnonce) {
@@ -729,21 +819,14 @@ USER = function (username, passkey) {
 		return false;
 	}
 
-	function set_transaction(progress, continuation) {
-		progress("check cache");
-		CACHE.atomic(username)(function (txn) {
-			transaction = txn;
-			continuation();
-		});
-	}
-
 	function delegate(that, generalize, name, args) {
 		if (that !== self) {
 			generalize(that, name, args);
 			return;
 		}
 		return PROMISE(function (fulfill, except, progress) {
-			set_transaction(progress, function () {
+			progress("checking cache");
+			open_txn(function () {
 				generalize({
 					fulfill: fulfill,
 					except: except,
@@ -753,10 +836,31 @@ USER = function (username, passkey) {
 	}
 
 	// Constructor
+	// The user has been removed.
+	function user_removed_4() {
+
+		self.get = function get() {
+			throw user_Exception("user removed");
+		};
+
+		self.update = function update() {
+			throw user_Exception("user removed");
+		};
+
+		self.connect = function connect() {
+			throw user_Exception("user removed");
+		};
+
+		self.remove = function remove() {
+			throw user_Exception("user removed");
+		};
+	}
+
+	// Constructor
 	// User passkey has been validated.
 	function user_passkey_3() {
 
-		function request(dir, name, data, cb, eb) {
+		function request(dir, name, method, data, cb, eb) {
 			var spec = transaction("get");
 			try {
 				REQ({
@@ -766,7 +870,7 @@ USER = function (username, passkey) {
 					username: username,
 					cnonce: cnonce(passkey, spec.nextnonce),
 					response: response(passkey, spec.nonce),
-					method: (data ? "put" : "get"),
+					method: method,
 					body: data
 				},
 				function (response) {
@@ -789,35 +893,35 @@ USER = function (username, passkey) {
 		}
 
 		self.get = function get(target) {
-			delegate(this, function (promise) {
+			return delegate(this, function (promise) {
 				promise.progress("getting");
-				request("users", target, null,
+				request("users", target, "get", null,
 					function (response) {
-						transaction("commit");
+						commit_txn();
 						promise.fulfill(response.body);
 					},
-					function (ex) { transaction("commit"); promise.except(ex); });
+					function (ex) { commit_txn(); promise.except(ex); });
 			});
 		};
 
 		self.update = function update(target, user) {
-			delegate(this, function (promise) {
+			return delegate(this, function (promise) {
 				promise.progress("updating");
-				request("users", target, user,
+				request("users", target, "put", user,
 					function (response) {
-						transaction("commit");
+						commit_txn();
 						promise.fulfill(response.body);
 					},
-					function (ex) { transaction("commit"); promise.except(ex); });
+					function (ex) { commit_txn(); promise.except(ex); });
 			});
 		};
 
 		self.connect = function connect(dbname, query) {
-			delegate(this, function (promise) {
+			return delegate(this, function (promise) {
 				promise.progress("connecting");
-				request("databases", dbname, query,
+				request("databases", dbname, "query", query,
 					function (response) {
-						transaction("commit");
+						commit_txn();
 						if (response.head.status === 200) {
 							promise.fulfill(CXN(), response.head.body);
 						}
@@ -835,7 +939,29 @@ USER = function (username, passkey) {
 							promise.except(offline_Exception());
 						}
 					},
-					function (ex) { transaction("commit"); promise.except(ex); });
+					function (ex) { commit_txn(); promise.except(ex); });
+			});
+		};
+
+		self.remove = function remove() {
+			return delegate(this, function (promise) {
+				promise.progress("removing");
+				request("users", username, "delete", null,
+					function (response) {
+						if (response.head.status === 204) {
+							transaction("set", null);
+							user_removed_4();
+							promise.fulfill(true);
+						}
+						else if (response.head.status === 404) {
+							promise.except(user_Exception("not found"));
+						}
+						else if (response.head.status === 403) {
+							promise.except(user_Exception("forbidden"));
+						}
+						commit_txn();
+					},
+					function (ex) { commit_txn(); promise.except(ex); });
 			});
 		};
 	}
@@ -844,15 +970,9 @@ USER = function (username, passkey) {
 	// User has received nonce and nextnonce.
 	function user_challenged_2() {
 
-		self.exists = function exists() {
-			return PROMISE(function (fulfill) {
-				fulfill(true);
-			});
-		};
-
 		function generalize_method(promise, name, continuation_args) {
 			if (typeof passkey === "function") {
-				transaction("commit");
+				commit_txn();
 				passkey(function (pk) {
 					passkey = pk;
 					self[name].apply(null, continuation_args);
@@ -863,7 +983,7 @@ USER = function (username, passkey) {
 			try {
 				passkey = validate_passkey(passkey);
 			} catch (e) {
-				transaction("commit");
+				commit_txn();
 				promise.except(e);
 				return;
 			}
@@ -872,15 +992,19 @@ USER = function (username, passkey) {
 		}
 
 		self.get = function get(target) {
-			delegate(this, generalize_method, "get", [target]);
+			return delegate(this, generalize_method, "get", [target]);
 		};
 
-		self.update = function update(target, user, cb, eb, pr) {
-			delegate(this, generalize_method, "update", [target, user]);
+		self.update = function update(target, user) {
+			return delegate(this, generalize_method, "update", [target, user]);
 		};
 
-		self.connect = function connect(dbname, cb, eb, pr) {
-			delegate(this, generalize_method, "connect", [dbname]);
+		self.connect = function connect(dbname, query) {
+			return delegate(this, generalize_method, "connect", [dbname, query]);
+		};
+
+		self.remove = function remove(target) {
+			return delegate(this, generalize_method, "remove", [target]);
 		};
 	}
 
@@ -888,7 +1012,7 @@ USER = function (username, passkey) {
 	// Initialize user.
 	function user_init_1() {
 
-		function ping(transaction, cb, eb) {
+		function ping(cb, eb) {
 			try {
 				REQ({
 					timeout: 7000,
@@ -924,20 +1048,10 @@ USER = function (username, passkey) {
 				eb(offline_Exception());
 			}
 		}
-		 
-		self.exists = function exists() {
-			return PROMISE(function (fulfill, except, progress) {
-				set_transaction(progress, function () {
-					progress("remote ping");
-					ping(function (r) { fulfill(r); transaction("commit"); },
-						function (x) { except(x); transaction("commit"); });
-				});
-			});
-		};
 
 		function generalize_method(name, continuation_args) {
 			return PROMISE(function (fulfill, except, progress) {
-				set_transaction(progress, function () {
+				open_txn(function () {
 					progress("remote ping");
 					ping(function (r) {
 						if (r) {
@@ -948,8 +1062,8 @@ USER = function (username, passkey) {
 							return;
 						}
 						except(user_Exception("user does not exist"));
-						transaction("commit");
-					}, function (x) { except(x); transaction("commit"); });
+						commit_txn();
+					}, function (x) { except(x); commit_txn(); });
 				});
 			});
 		}
@@ -962,8 +1076,23 @@ USER = function (username, passkey) {
 			return generalize_method("update", [target, user]);
 		};
 
-		self.connect = function connect(dbname) {
-			return generalize_method("connect", [dbname]);
+		self.connect = function connect(dbname, query) {
+			return generalize_method("connect", [dbname, query]);
+		};
+
+		self.remove = function remove(target) {
+			return generalize_method("remove", [target]);
+		};
+
+		self.init = function init(nonce, nextnonce) {
+			return PROMISE(function (fulfill) {
+				open_txn(function () {
+					transaction("set", {nonce: nonce, nextnonce: nextnonce});
+					self.init = function () { throw new Error("USER.init(); initialized"); };
+					user_challenged_2();
+					fulfill(self);
+				});
+			});
 		};
 	}
 
