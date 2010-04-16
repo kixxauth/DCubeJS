@@ -148,7 +148,7 @@ exports.validateDBName = validate_dbname;
 exports.logger = function update_logger(x) {
 	var m;
 	for (m in x) {
-		if (Object.prototpe.hasOwnProperty.call(x, m)) {
+		if (Object.prototype.hasOwnProperty.call(x, m)) {
 			LOG[m] = x[m];
 		}
 	}
