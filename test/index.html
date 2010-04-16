@@ -198,6 +198,47 @@ function run_tests() {
 			});
 	});
 
+	test("user.connect()", 1, function () {
+		stop();
+
+		function cb(x) {
+			equal(typeof(x.request), "function", "got connection");
+			start();
+		}
+
+		function eb(x) {
+			ok(false, "connect exception: "+ x);
+			start();
+		}
+
+		ddd.user("foo").connect("foobox")(cb, eb);
+	});
+
+	test("connection.request()", 1, function () {
+		stop();
+
+		function cb(x) {
+			x.request()
+				.put("#key", null, {"class": "test"})
+				.send()(
+					function () {
+						ok(true, "item put");
+						start();
+					},
+					function (x) {
+						ok(false, "exception: "+ x);
+						start();
+					});
+		}
+
+		function eb(x) {
+			ok(false, "connect exception: "+ x);
+			start();
+		}
+
+		ddd.user("foo").connect("foobox")(cb, eb);
+	});
+
 	test("user.removeDatabase() ok", 1, function () {
 		stop();
 		ddd.user(username).removeDatabase("foobox")(

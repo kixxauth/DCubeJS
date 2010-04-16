@@ -302,6 +302,104 @@ exports.createUser = function pub_createUser(username, passkey) {
 	});
 };
 
+exports.query = function query_constructor() {
+	var self = {}, q = [];
+
+	self.put = function query_put(key, entity, indexes) {
+		if (typeof key !== "string" && typeof key !== "number") {
+			throw new Error("query.put(); key not a string or number.");
+		}
+		entity = JSON.stringify(confirmObject(entity));
+		indexes = confirmObject(indexes);
+		var stmts = [["key", "=", key], ["entity", "=", entity]], idx;
+		
+		for (idx in indexes) {
+			if (indexes.hasOwnProperty(idx)) {
+				if (typeof indexes[idx] !== "string" &&
+						typeof indexes[idx] !== "number") {
+					throw new Error("query.put(); index '"+
+							idx +"' not a string or number.");
+				}
+				stmts.push([idx, "=", indexes[idx]]);
+			}
+		}
+
+		q.push({action: "put", statements: stmts});
+		return self;
+	};
+
+	self.query = function query_query() {
+		var stmts = [];
+		return {
+			eq: function q_eq(a, b) {
+				if (typeof a !== "string" && typeof a !== "number") {
+					throw new Error("query.query.eq(); "+
+							"First param not a string or number.");
+				}
+				if (typeof b !== "string" && typeof b !== "number") {
+					throw new Error("query.query.eq(); "+
+							"Second param not a string or number.");
+				}
+				stmts.push([a,"=",b]);
+				return this;
+			},
+
+			gt: function q_gt(a, b) {
+				if (typeof a !== "string" && typeof a !== "number") {
+					throw new Error("query.query.gt(); "+
+							"First param not a string or number.");
+				}
+				if (typeof b !== "string" && typeof b !== "number") {
+					throw new Error("query.query.gt(); "+
+							"Second param not a string or number.");
+				}
+				stmts.push([a,">",b]);
+				return this;
+			},
+
+			lt: function q_gt(a, b) {
+				if (typeof a !== "string" && typeof a !== "number") {
+					throw new Error("query.query.lt(); "+
+							"First param not a string or number.");
+				}
+				if (typeof b !== "string" && typeof b !== "number") {
+					throw new Error("query.query.lt(); "+
+							"Second param not a string or number.");
+				}
+				stmts.push([a,"<",b]);
+				return this;
+			},
+
+			append: function q_append() {
+				q.push({action: "query", statements: stmts});
+				return self;
+			}
+		};
+	};
+
+	self.get = function query_get(key) {
+		if (typeof key !== "string" && typeof key !== "number") {
+			throw new Error("query.get(); key not a string or number.");
+		}
+		q.push({action: "get", statements: [["key", "=", key]]});
+		return self;
+	};
+
+	self.remove = function query_remove(key) {
+		if (typeof key !== "string" && typeof key !== "number") {
+			throw new Error("query.remove(); key not a string or number.");
+		}
+		q.push({action: "delete", statements: [["key", "=", key]]});
+		return self;
+	};
+
+	self.resolve = function query_resolve() {
+		return q;
+	};
+
+	return self;
+};
+
 LOG = {
 	debug: function log_debug(msg) {
 		dump("DCube:DEBUG:"+ new Date() + msg +"\n");
@@ -770,8 +868,39 @@ CACHE = (function () {
 	return self;
 }());
 
-CXN = function () {
+CXN = function (dbname, request) {
 	var self = {};
+
+	function connection_Exception(msg) {
+		var self = new Error(msg || "unkown");
+		self.name = "DCubeConnectionError";
+		self.constructor = arguments.callee;
+		return self;
+	}
+
+	self.request = function cxn_request() {
+		var req = exports.query();
+
+		req.send = function req_send() {
+			return PROMISE(function (fulfill, except) {
+				request(dbname, req.resolve(),
+					function (response) {
+						if (response.head.status !== 200) {
+							LOG.warn("query response code: "+
+								response.head.status);
+							LOG.warn("query response body: "+
+								JSON.stringify(response.body));
+							except(connection_Exception(response.head.message));
+							return;
+						}
+						fulfill(response.body);
+					}, except);
+			});
+		};
+
+		return req;
+	};
+
 	return self;
 };
 
@@ -908,6 +1037,45 @@ USER = function (username, passkey) {
 			}
 		}
 
+		function user_request(dbname, query, cb, eb) {
+			open_txn(function () {
+				var spec = transaction("get");
+				try {
+					REQ({
+						timeout: 7000,
+						dir: "databases",
+						name: dbname, 
+						username: username,
+						cnonce: cnonce(passkey, spec.nextnonce),
+						response: response(passkey, spec.nonce),
+						method: "query",
+						body: query 
+					},
+					function (response) {
+						if (response.head.authorization.length === 3 &&
+								!authenticated(spec, response.head.authorization)) {
+							LOG.warn("CXN::user_request(); invalid credentials");
+							commit_txn();
+							eb(user_Exception("invalid credentials"));
+							return;
+						}
+						commit_txn();
+						cb(response);
+					},
+					function (ex) {
+						LOG.warn("CXN::user_request(); "+ ex);
+						commit_txn();
+						eb(offline_Exception());
+					});
+				} catch (e) {
+					// REQ will throw an error if the URL is malformed
+					LOG.warn("CXN::user_request(); "+ e);
+					commit_txn();
+					eb(offline_Exception());
+				}
+			});
+		}
+
 		self.get = function get(target) {
 			return delegate(this, function (promise) {
 				promise.progress("getting");
@@ -932,14 +1100,14 @@ USER = function (username, passkey) {
 			});
 		};
 
-		self.connect = function connect(dbname, query) {
+		self.connect = function connect(dbname) {
 			return delegate(this, function (promise) {
 				promise.progress("connecting");
-				request("databases", dbname, "query", query,
+				request("databases", dbname, "query", [],
 					function (response) {
 						commit_txn();
 						if (response.head.status === 200) {
-							promise.fulfill(CXN(), response.head.body);
+							promise.fulfill(CXN(dbname, user_request));
 						}
 						else if (response.head.status === 403) {
 							promise.except(
