@@ -1420,11 +1420,11 @@ isArray = function isArray(x) {
 };
 
 confirmObject = function confirmObject(x) {
-	return isObject(x) ? x : $N;
+	return isObject(x) ? x : {};
 };
 
 confirmArray = function confirmArray(x) {
-	return isArray(x) ? x : $A;
+	return isArray(x) ? x : [];
 };
 
 confirmFunc = function confirmFunc(x) {
