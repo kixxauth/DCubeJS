@@ -180,10 +180,10 @@ exports.domain = function domain_accessor(x) {
 exports.user = (function () {
 	var users = {};
 
-	return function (username, passkey) {
+	return function (username, passkey, force) {
 		username = validate_username(username);
 
-		if (!users[username]) {
+		if (!users[username] || force) {
 			if (typeof passkey !== "function") {
 				passkey = validate_passkey(passkey);
 			}
@@ -262,7 +262,7 @@ exports.createUser = function pub_createUser(username, passkey) {
 				},
 				function (response) {
 					if (response.head.status === 201) {
-						exports.user(username, passkey)
+						exports.user(username, passkey, true)
 							.init(response.head.authorization[1],
 								response.head.authorization[2])(
 									function (user) {
