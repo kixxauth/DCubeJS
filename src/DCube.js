@@ -721,7 +721,8 @@ REQ = (function () {
 				authorization: response.head.authorization || $A,
 				status: response.head.status || 0
 			},
-			body: (isObject(response.body) ? response.body : null)
+			body: ((response.body && typeof response.body === 'object') ?
+				response.body : null)
 		};
 	}
 
