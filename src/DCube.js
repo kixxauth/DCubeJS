@@ -43,8 +43,10 @@ var setTimeout = (function () {
 
 var DEBUG = false,
 	DOMAIN = "http://localhost",
+	DB,
 	LOG,
 	ENQ,
+	SHA1,
 	PROMISE,
 	XHR,
 	JSONRequest,
@@ -393,6 +395,491 @@ exports.query = function query_constructor() {
 	return self;
 };
 
+DB = (function () {
+	var cache = {}, models = {}, uid;
+
+	function entity(spec, mapper) {
+		var update;
+
+		function update_array(a, b) {
+			a = isArray(a) ? a : [];
+			var i = 0, len = b.length;
+			for (; i < len; i += 1) {
+				a[i] = update(a[i], b[i]);
+			}
+			return a;
+		}
+
+		function update_object(a, b) {
+			a = isObject(a) ? a : {};
+			var p;
+			for (p in b) {
+				if (isin(b, p)) {
+					a[p] = update(a[p], b[p]);
+				}
+			}
+			return a;
+		}
+
+		update = function (a, b) {
+			if (isArray(b)) {
+				return update_array(a, b);
+			}
+			if (isObject(b)) {
+				return update_object(a, b);
+			}
+			return (a = b);
+		};
+
+		return function (method) {
+			switch (method) {
+
+			case 'key':
+				return spec.key;
+
+			case 'entity':
+				// Return a cheap copy.
+				return JSON.parse(JSON.stringify(spec.data));
+
+			case 'indexes':
+				// Return a cheap copy.
+				return JSON.parse(JSON.stringify(spec.indexes));
+
+			case 'update':
+				spec.data = mapper(update(spec.data, arguments[1]));
+				return JSON.parse(JSON.stringify(spec.data));
+
+			case 'delete':
+				spec.data = spec.indexes = null;
+				return true;
+
+			default:
+				throw new Error('Invalid entity method: '+ method);
+			}
+		};
+	}
+
+	function db(connection) {
+		var self = {},
+		promised_results = [],
+		fulfilled_results = [],
+		request = connection.request();
+
+		function create(kind) {
+			var ent = models[kind]();
+			return (cache[ent('key')] = ent);
+		}
+
+		function get(key, cb) {
+			if (cache[key]) {
+				fulfilled_results.push(function () {
+					cb(cache[key]);
+				});
+			}
+			else {
+				request.get(key);
+				promised_results.push(cb);
+			}
+			return self;
+		}
+
+		function put(ent, cb) {
+			request.put(ent('key'), ent('entity'), ent('indexes'));
+			promised_results.push(cb);
+			return self;
+		}
+
+		function del(key, cb) {
+			cache[key]('delete');
+			delete cache[key];
+			request.remove(key);
+			promised_results.push(cb);
+			return self;
+		}
+
+		function query() {
+			var q = request.query(), append = q.append;
+			q.append = function (cb) {
+				append();
+				promised_results.push(cb);
+				return self;
+			};
+			return q;
+		}
+
+		function update_entity(item, cb) {
+			var ent;
+			try {
+				if (!cache[item.key]) {
+					ent = models[item.indexes.kind](
+						item.key, item.entity, item.indexes);
+					cache[item.key] = ent;
+				}
+				else {
+					cache[item.key]('update', item.entity);
+				}
+			} catch (e) {
+				LOG.warn('Unable to handle DCube results for '+
+					JSON.stringify(item));
+				LOG.error(e);
+			}
+			cb(cache[item.key] || null);
+		}
+
+		function go(errback) {
+			var this_results = promised_results,
+				this_fulfilled_results = fulfilled_results;
+
+			function make_push_result(results) {
+				return function (r) {
+					results.push(r);
+				};
+			}
+
+			request.send()(
+				function (response) {
+					var i = 0, item, status, action,
+						n = 0, qresults, push_result, p, indexes;
+					for (; i < response.length; i += 1) {
+						item = response[i];
+						action = item.action;
+						status = item.status;
+						if (action === 'get') {
+							if (status === 200) {
+								update_entity(item, this_results[i]);
+							}
+							else {
+								this_results[i](null);
+							}
+						}
+						else if (action === 'put') {
+							if (status === 200 || status === 201) {
+								update_entity(item, this_results[i]);
+							}
+							else {
+								this_results[i](null);
+							}
+						}
+						else if (action === 'delete') {
+							this_results[i](status === 204);
+							// cache already deleted before remote request was made.
+						}
+						else if (action === 'query') {
+							qresults = [];
+							push_result = make_push_result(qresults);
+							if (status !== 200) {
+								this_results[i](qresults);
+								return;
+							}
+							indexes = {};
+							for (n = 0; n < item.results.length; n += 1) {
+								for (p in item.results[n]) {
+									if (item.results[n].hasOwnProperty(p) &&
+											p !== 'key' && p !== 'entity') {
+										indexes[p] = item.results[n][p];
+									}
+								}
+								update_entity({
+									key: item.results[n].key,
+									entity: item.results[n].entity,
+									indexes: indexes
+								}, push_result);
+							}
+							this_results[i](qresults);
+						}
+						else {
+							LOG.warn('DB.go():: Unknown query response action: "'+ action +'".');
+							errback(offline_Exception());
+						}
+					}
+
+					for (i = 0; i < this_fulfilled_results.length; i += 1) {
+						this_fulfilled_results[i]();
+					}
+
+				}, errback);
+			promised_results = [];
+			fulfilled_results = [];
+			request = connection.request();
+		}
+
+		self.create = create;
+		self.get = get;
+		self.put = put;
+		self.del = del;
+		self.query = query;
+		self.go = go;
+		return self;
+	}
+
+	db.model = function (kind, fn) {
+		var model,
+			map_model;
+
+		if (typeof kind !== 'string') {
+			throw new Error(
+					"db.model(); First param must be a string.");
+		}
+		if (typeof fn !== 'function') {
+			throw new Error(
+					"db.model(); Second param must be a function.");
+		}
+
+		map_model = (function () {
+			var map_list, map_dict, gen_map, map_it;
+
+			function index_it(index_to, idx_dict) {
+				var id = index_to[0], val = index_to[1], i = 0, isarr;
+
+				if (typeof id !== 'string') {
+					throw new Error(
+							'map_model(); Invalid index name: '+ id); 
+				}
+				isarr = isArray(val);
+				if (typeof val !== 'string' && typeof val !== 'number' && !isarr) {
+					throw new Error('map_model(); Invalid index property: '+
+							(isarr ? JSON.stringify(val) : val)); 
+				}
+
+				if (isarr) {
+					for (; i < val.length; i += 1) {
+						if (typeof val !== 'string' && typeof val !== 'number') {
+							throw new Error(
+									'map_model(); Invalid index property: '+ val); 
+						}
+					}
+				}
+				idx_dict[id] = val;
+			}
+
+			map_list = function (m, x, idx) {
+				x = isArray(x) ? x : m.coerce(x);
+				if (!x.length) {
+					x[0] = m.tree.coerce();
+				}
+
+				return x.map(function (item) {
+					return gen_map(m.tree, item, idx);
+				});
+			};
+
+			map_dict = function (m, x, idx) {
+				x = isObject(x) ? x : m.coerce(x);
+				var p;
+
+				for (p in m.tree) {
+					if (m.tree.hasOwnProperty(p)) {
+						x[p] = gen_map(m.tree[p], x[p], idx);
+					}
+				}
+				return x;
+			};
+
+			gen_map = function (m, x, idx) {
+				var type = m.type;
+
+				if (type === 'dict') {
+					x = map_dict(m, x, idx);
+				}
+				else if (type === 'list') {
+					x = map_list(m, x, idx);
+				}
+				else if (type === 'number') {
+					x = (typeof x === 'number' ? x : m.coerce(x));
+				}
+				else if (type === 'string') {
+					x = (typeof x === 'string' ? x : m.coerce(x));
+				}
+				else if (type === 'boolean') {
+					x = (typeof x === 'boolean' ? x : m.coerce(x));
+				}
+
+				if (typeof m.index === 'function') {
+					index_it(m.index(x), idx);
+				}
+				return x;
+			};
+
+			map_it = function (m, x, idx) {
+				x = isObject(x) ? x : {};
+				var p;
+				for (p in m) {
+					if (m.hasOwnProperty(p)) {
+						x[p] = gen_map(m[p], x[p], idx);
+					}
+				}
+				return x;
+			};
+
+			return map_it;
+		}());
+
+		function literal(opt, spec) {
+			var prop = {},
+				coerce = opt.coerce,
+				index = opt.index;
+
+			prop.type = spec.type;
+
+			prop.coerce = (typeof coerce === 'function' ?
+					coerce : spec.coerce);
+
+			if (typeof index === 'function') {
+				prop.index = index;
+			}
+
+			return prop;
+		}
+
+		function string_property(opt) {
+			opt = isObject(opt) ? opt : {};
+			var def = (typeof opt.def === 'string') ? opt.def : '';
+			return literal(opt,
+				{
+					type: 'string',
+					
+					coerce: function (val) {
+						return (typeof val === 'string') ? val : def;
+					}
+				});
+		}
+
+		function number_property(opt) {
+			opt = isObject(opt) ? opt : {};
+			var def = ((typeof opt.def === 'number' && !isNaN(opt.def)) ?
+				opt.def : 0);
+			return literal(opt,
+				{
+					type: 'number',
+					
+					coerce: function (val) {
+						return (typeof val === 'number' && !isNaN(val)) ? val : def;
+					}
+				});
+		}
+
+		function bool_property(opt) {
+			opt = isObject(opt) ? opt : {};
+			var def = (typeof opt.def === 'boolean') ? opt.def : false;
+			return literal(opt,
+				{
+					type: 'boolean',
+					
+					coerce: function (val) {
+						return (typeof val === 'boolean') ? val : def;
+					}
+				});
+		}
+
+		function list_property(prop, opt) {
+			opt = isObject(opt) ? opt : {};
+			var def = (isArray(opt.def) ? opt.def : []),
+				coerce = opt.coerce,
+				index = opt.index;
+
+			return {
+				type: 'list',
+				tree: prop,
+
+				coerce: ((typeof coerce === 'function') ?
+					coerce :
+					function (val) {
+						return isArray(val) ? val : def;
+					}),
+
+				index: ((typeof index === 'function') ? index : null)
+			};
+		}
+
+		function dict_property(props, opt) {
+			opt = isObject(opt) ? opt : {};
+			var def = (isObject(opt.def) ? opt.def : {}),
+				coerce = opt.coerce,
+				index = opt.index;
+
+			return {
+				type: 'dict',
+				tree: props,
+
+				coerce: (typeof coerce === 'function' ? coerce :
+					function (val) {
+						return isArray(val) ? val : def;
+					}),
+
+				index: ((typeof index === 'function') ? index : null)
+			};
+		}
+
+		model = fn({
+			str: string_property,
+			num: number_property,
+			bool: bool_property,
+			list: list_property,
+			dict: dict_property
+		});
+
+		// Make a uid generator.
+		function uid_generator(prefix, hash) {
+			if (typeof prefix === 'function') {
+				hash = prefix;
+				prefix = '';
+			}
+			prefix = (typeof prefix === 'string') ? prefix : '';
+
+			var counter = 0,
+				time_string = new Date().getTime();
+
+			return  ((typeof hash === 'function') ? 
+				function () {
+					return hash(prefix + (counter += 1) + time_string);
+				} :
+				function () {
+					return prefix + (counter += 1) + time_string;
+				});
+		}
+
+		uid = uid_generator(SHA1);
+
+		// Base model constructor which returns an entity object.
+		function self(key, ent, idx) {
+			if (!isObject(ent)) {
+				ent = {};
+			}
+			if (!isObject(idx)) {
+				idx = {};
+			}
+
+			idx.kind = kind;
+			ent = map_model(model, ent, idx);
+
+			function mapper(data) {
+				return map_model(model, data, idx);
+			}
+
+			if (key) {
+				return entity({key: key, data: ent, indexes: idx}, mapper);
+			}
+			return entity({key: uid(), data: ent, indexes: idx}, mapper);
+		}
+
+		models[kind] = self;
+	};
+
+	return db;
+}());
+
+exports.db = (function () {
+	function db(dbname, username, passkey) {
+		return PROMISE(function (fulfilled, except) {
+			exports.connect(dbname, username, passkey)(
+				function (cxn) { fulfilled(DB(cxn)); }, except);
+		});
+	}
+	db.model = DB.model;
+	return db;
+}());
+
+
 LOG = {
 	debug: function log_debug(msg) {
 		dump("DCube:DEBUG:"+ new Date() + msg +"\n");
@@ -523,7 +1010,7 @@ PROMISE = (function () {
 	};
 }());
 
-function SHA1(target) {
+SHA1 = function (target) {
 	var uc = Components.classes["@mozilla.org/intl/scriptableunicodeconverter"].
 			createInstance(Components.interfaces.nsIScriptableUnicodeConverter),
 		hasher = Components.classes["@mozilla.org/security/hash;1"].
@@ -547,7 +1034,7 @@ function SHA1(target) {
 		.map.call(hash, function (x){ return x.charCodeAt(0); })
 		.map(toHexString)
 		.join("");
-}
+};
 
 /**
  * Returns a function that does XMLHttpRequest.

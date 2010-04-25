@@ -33,6 +33,7 @@ function run_tests() {
 	var ddd = require("dcube");
 	var username = document.getElementById("username").value;
 	var passkey = document.getElementById("passkey").value;
+	var db;
 
 	dump("\n\n <-- start testing -->\n");
 	start();
@@ -238,6 +239,190 @@ function run_tests() {
 		}
 
 		ddd.user("foo").connect("foobox")(cb, eb);
+	});
+
+	test("High level db module creation", 2, function () {
+		equals(typeof ddd.db, "function", "db(): "+ (typeof ddd.db));
+		equals(typeof ddd.db.model, "function", "db.model(): "+ (typeof ddd.db.model));
+	});
+
+	test("db modeling", 0, function () {
+
+		function index_last_name(val) {
+			return ['last_name', val];
+		}
+
+		function customer(db) {
+			return {
+				names: db.list(
+					db.dict({
+						first: db.str(),
+						last: db.str({index: index_last_name})
+					})
+				),
+				addresses: db.list(
+					db.dict({
+						street: db.str(),
+						city: db.str(),
+						state: db.str(),
+						zip: db.str()
+					})
+				),
+				phones: db.list(
+					db.dict({
+						phone: db.str(),
+						label: db.str()
+					})
+				),
+				emails: db.list(
+					db.dict({
+						email: db.str(),
+						label: db.str()
+					})
+				)
+			};
+		}
+
+		ddd.db.model("customer", customer);
+	});
+
+	test("get db session instance", 6, function () {
+		function cb(x) {
+			db = x;
+			equals(typeof db.create, "function", " ; "+ typeof db.create);
+			equals(typeof db.get, "function", " ; "+ typeof db.get);
+			equals(typeof db.put, "function", " ; "+ typeof db.put);
+			equals(typeof db.del, "function", " ; "+ typeof db.del);
+			equals(typeof db.query, "function", " ; "+ typeof db.query);
+			equals(typeof db.go, "function", " ; "+ typeof db.go);
+			start();
+		}
+
+		function eb(x) {
+			ok(false, "db exception: "+ x);
+			start();
+		}
+
+		stop();
+		ddd.db("foobox", "foo", "foobar")(cb, eb);
+	});
+
+	test("create an entity", 4, function () {
+		function put_cb(x) {
+			equals(JSON.stringify(x("entity")),
+				JSON.stringify({
+				names: [{first: 'fooman', last: 'chew'}],
+				addresses: [{street: '', city: '', state: '', zip: ''}],
+				phones: [{phone: '', label: ''}],
+				emails: [{email: '', label: ''}]
+			}), "put customer");
+		}
+
+		function get_cb(x) {
+			equals(JSON.stringify(x("entity")),
+				JSON.stringify({
+				names: [{first: 'fooman', last: 'chew'}],
+				addresses: [{street: '', city: '', state: '', zip: ''}],
+				phones: [{phone: '', label: ''}],
+				emails: [{email: '', label: ''}]
+			}), "get customer");
+			start();
+		}
+
+		var customer = db.create("customer");
+
+		equals(JSON.stringify(customer("entity")),
+			JSON.stringify({
+			names: [{first: '', last: ''}],
+			addresses: [{street: '', city: '', state: '', zip: ''}],
+			phones: [{phone: '', label: ''}],
+			emails: [{email: '', label: ''}]
+		}), "new customer");
+
+		customer("update", {
+			names: [{
+				first: 'fooman',
+				last: 'chew'
+			}]
+		});
+
+		equals(JSON.stringify(customer("entity")),
+			JSON.stringify({
+			names: [{first: 'fooman', last: 'chew'}],
+			addresses: [{street: '', city: '', state: '', zip: ''}],
+			phones: [{phone: '', label: ''}],
+			emails: [{email: '', label: ''}]
+		}), "new customer");
+
+		stop();
+		db
+			.put(customer, put_cb)
+			.get(customer('key'), get_cb)
+			.go(function (x) {
+				ok(false, "db exception: "+ x);
+				start();
+			});
+	});
+
+	test("get entities by kind and delete", 5, function () {
+
+		function a_cb(x) {
+			equal(x.length, 1, "kind query");
+			if (typeof x[0] === "function") {
+				equals(JSON.stringify(x[0]("entity")),
+					JSON.stringify({
+					names: [{first: 'fooman', last: 'chew'}],
+					addresses: [{street: '', city: '', state: '', zip: ''}],
+					phones: [{phone: '', label: ''}],
+					emails: [{email: '', label: ''}]
+				}), "kind query");
+			}
+		}
+
+		function b_cb(x) {
+			equal(x.length, 1, "name query");
+			if (typeof x[0] === "function") {
+				equals(JSON.stringify(x[0]("entity")),
+					JSON.stringify({
+					names: [{first: 'fooman', last: 'chew'}],
+					addresses: [{street: '', city: '', state: '', zip: ''}],
+					phones: [{phone: '', label: ''}],
+					emails: [{email: '', label: ''}]
+				}), "name query");
+			}
+
+			// Garbage collect the leftovers
+			function del_cb(x) {
+				ok(x === true, "deleted");
+			}
+			for (var i = 1; i < x.length; i++) {
+				if (typeof x[i] === "function") {
+					db.del(x[i]('key'), del_cb);
+				}
+			}
+
+			db.del(x[0]('key'), function (x) {
+				ok(x === true, "deleted");
+				start();
+			})
+			.go(function (x) {
+				ok(false, "db exception: "+ x);
+				start();
+			});
+		}
+
+		stop();
+		db
+			.query()
+			.kind("customer")
+			.append(a_cb)
+			.query()
+			.eq("last_name", "chew")
+			.append(b_cb)
+			.go(function (x) {
+				ok(false, "db exception: "+ x);
+				start();
+			});
 	});
 
 	test("user.removeDatabase() ok", 1, function () {
