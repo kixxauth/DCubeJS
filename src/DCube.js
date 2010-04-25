@@ -53,7 +53,7 @@ var DEBUG = false,
 	CXN,
 	USER,
 	$N = {}, $A = [], $F = function(){},
-	isObject, isArray, confirmObject, confirmArray, confirmFunc;
+	isin, isObject, isArray, confirmObject, confirmArray, confirmFunc;
 
 // Used throughout this module to inform the interface of exceptions that are
 // not expected.  These exceptions should always be logged internally.
@@ -1364,6 +1364,10 @@ USER = function (username, passkey) {
 
 	user_init_1();
 	return self;
+};
+
+isin = function (x, p) {
+	return Object.prototype.hasOwnProperty.call(x, p);
 };
 
 isObject = function isObject(x) {
