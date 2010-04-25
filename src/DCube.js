@@ -317,6 +317,13 @@ exports.query = function query_constructor() {
 	self.query = function query_query() {
 		var stmts = [];
 		return {
+			kind: function q_kind(kind) {
+				if (typeof kind !== "string") {
+					throw new Error("query.query.kind(); kind() takes a string.");
+				}
+				return this.eq('kind', kind);
+			},
+
 			eq: function q_eq(a, b) {
 				if (typeof a !== "string" && typeof a !== "number") {
 					throw new Error("query.query.eq(); "+
