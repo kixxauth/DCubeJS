@@ -24,15 +24,6 @@ dump: false
 // For Mozilla JavaScript modules system.
 var EXPORTED_SYMBOLS = ["exports"];
 
-// If we are in the Mozilla module system we need to add some boilerplate to be
-// CommonJS complient. This is obviously an ugly hack to allow integration with
-// legacy code that uses the Mozilla module system.
-function require(id) {
-	var m = Components.utils.import(
-			"resource://chrometest/resources/"+ id +".js", null);
-	return ((typeof m.exports === "object") ? m.exports : m);
-}
-
 var exports = {};
 var module = {id: "dcube"};
 
