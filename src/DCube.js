@@ -10,8 +10,7 @@ bitwise: true,
 regexp: true,
 strict: true,
 newcap: false,
-immed: true,
-maxlen: 80
+immed: true
 */
 
 /*global
