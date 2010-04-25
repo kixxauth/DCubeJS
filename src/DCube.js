@@ -244,14 +244,10 @@ exports.connect = (function () {
 		username = validate_username(username);
 		return PROMISE(function (fulfill, except, progress) {
 			if (!connections[dbname +":"+ username]) {
-				exports.user(username, passkey)(
-					function (user) {
-					 user.connect(dbname)(
-							function (cxn) {
-								fulfill(connections[dbname +":"+ username] = cxn);
-							}, except, progress);
-					},
-					except, progress);
+				exports.user(username, passkey).connect(dbname)(
+					function (cxn) {
+						fulfill(connections[dbname +":"+ username] = cxn);
+					}, except, progress);
 			}
 			else {
 				fulfill(connections[dbname +":"+ username]);
