@@ -141,6 +141,7 @@ function run_tests() {
 		stop();
 		function cb(user) {
 			same(user.groups, ["users"], "got groups");
+			user.groups = user.groups || [];
 			user.groups.push("database");
 			ddd.user(username).update("foo", user)(
 				function (x) {
