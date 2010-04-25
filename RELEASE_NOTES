@@ -1,0 +1,10 @@
+DCubeJS Release Notes
+=====================
+
+### Version 0.1 April 25th, 2010
+--------------------------------
+
+This is the initial release. Currently DCubeJS only works as a JavaScript
+module on the Mozilla platform with `Components.utils.import()`. The
+documentation and road map does not exist yet, so don't go looking for it.
+
