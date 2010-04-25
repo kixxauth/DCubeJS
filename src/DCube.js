@@ -953,38 +953,7 @@ USER = function (username, passkey) {
 	// Constructor
 	// The user has been removed.
 	function user_removed_4() {
-
-		self.get = function get() {
-			throw user_Exception("user removed");
-		};
-
-		self.update = function update() {
-			throw user_Exception("user removed");
-		};
-
-		self.connect = function connect() {
-			throw user_Exception("user removed");
-		};
-
-		self.remove = function remove() {
-			throw user_Exception("user removed");
-		};
-
-		self.createDatabase = function createDatabase() {
-			throw user_Exception("user removed");
-		};
-
-		self.removeDatabase = function removeDatabase() {
-			throw user_Exception("user removed");
-		};
-
-		self.getDatabase = function getDatabase() {
-			throw user_Exception("user removed");
-		};
-
-		self.updateDatabase = function updateDatabase() {
-			throw user_Exception("user removed");
-		};
+		user_init_1();
 	}
 
 	// Constructor
