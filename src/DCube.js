@@ -892,7 +892,7 @@ CXN = function (dbname, request) {
 };
 
 USER = function (username, passkey) {
-	var self = {}, transaction = null;
+	var self = {}, transaction = null, user_init_1;
 
 	function user_Exception(message) {
 		var self = new Error(message || "unkown");
@@ -1010,7 +1010,7 @@ USER = function (username, passkey) {
 					function (response) {
 						if (response.head.authorization.length === 3 &&
 								!authenticated(spec, response.head.authorization)) {
-							LOG.warn("CXN::user_request(); invalid credentials");
+							LOG.warn("USER::user_request(); invalid credentials");
 							commit_txn();
 							eb(user_Exception("invalid credentials"));
 							return;
@@ -1019,13 +1019,13 @@ USER = function (username, passkey) {
 						cb(response);
 					},
 					function (ex) {
-						LOG.warn("CXN::user_request(); "+ ex);
+						LOG.warn("USER::user_request(); "+ ex);
 						commit_txn();
 						eb(offline_Exception());
 					});
 				} catch (e) {
 					// REQ will throw an error if the URL is malformed
-					LOG.warn("CXN::user_request(); "+ e);
+					LOG.warn("USER::user_request(); "+ e);
 					commit_txn();
 					eb(offline_Exception());
 				}
@@ -1261,7 +1261,7 @@ USER = function (username, passkey) {
 
 	// Constructor.
 	// Initialize user.
-	function user_init_1() {
+	user_init_1 = function () {
 
 		function ping(cb, eb) {
 			try {
@@ -1361,7 +1361,7 @@ USER = function (username, passkey) {
 				});
 			});
 		};
-	}
+	};
 
 	user_init_1();
 	return self;
