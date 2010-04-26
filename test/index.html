@@ -35,7 +35,6 @@ function run_tests() {
 	var passkey = document.getElementById("passkey").value;
 	var db;
 
-	dump("\n\n <-- start testing -->\n");
 	start();
 
 	test("import", 1, function () {
@@ -136,6 +135,31 @@ function run_tests() {
 				equals(x.toString(), "DCubeUserError: forbidden", "forbidden: "+ x);
 				start();
 			});
+	});
+
+	test("Re-memoize after invalid passkey", 3, function () {
+		function cb(x) {
+			ok(false, "response: "+ x);
+			start();
+		}
+
+		function eb(x) {
+			equals(x.name, "DCubeUserError", "error name");
+			equals(x.message, "invalid passkey", "error message");
+
+			ddd.connect("sandbox", username, passkey)(
+				function (x) {
+					equals(typeof x.request, "function", "got connection");
+					start();
+				},
+				function (x) {
+					ok(false, "error: "+ x);
+					start();
+				});
+		}
+
+		stop();
+		ddd.connect("sandbox", username, "invalid-passkey")(cb, eb);
 	});
 
 	test("user.get() user.update() ok", 2, function () {
