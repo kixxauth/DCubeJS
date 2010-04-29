@@ -535,15 +535,16 @@ DB = (function () {
 		}
 
 		function update_entity(item, cb) {
-			var ent;
+			var ent, parsed_entity = JSON.parse(item.entity);
+
 			try {
 				if (!cache[item.key]) {
 					ent = models[item.indexes.kind](
-						item.key, item.entity, item.indexes);
+						item.key, parsed_entity, item.indexes);
 					cache[item.key] = ent;
 				}
 				else {
-					cache[item.key]('update', item.entity);
+					cache[item.key]('update', parsed_entity);
 				}
 			} catch (e) {
 				LOG.warn('Unable to handle DCube results for '+
@@ -581,7 +582,7 @@ DB = (function () {
 						}
 						else if (action === 'put') {
 							if (status === 200 || status === 201) {
-								update_entity(item, this_results[i]);
+								this_results[i](cache[item.key]);
 							}
 							else {
 								this_results[i](null);
@@ -680,9 +681,9 @@ DB = (function () {
 			}
 
 			map_list = function (m, x, idx) {
-				x = isArray(x) ? x : m.coerce(x);
+				x = isArray(x) ? x : m.def;
 				if (!x.length) {
-					x[0] = m.tree.coerce();
+					x[0] = m.tree.def;
 				}
 
 				return x.map(function (item) {
@@ -691,7 +692,7 @@ DB = (function () {
 			};
 
 			map_dict = function (m, x, idx) {
-				x = isObject(x) ? x : m.coerce(x);
+				x = isObject(x) ? x : m.def;
 				var p;
 
 				for (p in m.tree) {
@@ -712,13 +713,13 @@ DB = (function () {
 					x = map_list(m, x, idx);
 				}
 				else if (type === 'number') {
-					x = (typeof x === 'number' ? x : m.coerce(x));
+					x = (typeof x === 'number' ? x : m.def);
 				}
 				else if (type === 'string') {
-					x = (typeof x === 'string' ? x : m.coerce(x));
+					x = (typeof x === 'string' ? x : m.def);
 				}
 				else if (type === 'boolean') {
-					x = (typeof x === 'boolean' ? x : m.coerce(x));
+					x = (typeof x === 'boolean' ? x : m.def);
 				}
 
 				if (typeof m.index === 'function') {
@@ -743,18 +744,13 @@ DB = (function () {
 
 		function literal(opt, spec) {
 			var prop = {},
-				coerce = opt.coerce,
 				index = opt.index;
 
 			prop.type = spec.type;
-
-			prop.coerce = (typeof coerce === 'function' ?
-					coerce : spec.coerce);
-
+			prop.def = spec.def;
 			if (typeof index === 'function') {
 				prop.index = index;
 			}
-
 			return prop;
 		}
 
@@ -764,10 +760,7 @@ DB = (function () {
 			return literal(opt,
 				{
 					type: 'string',
-					
-					coerce: function (val) {
-						return (typeof val === 'string') ? val : def;
-					}
+					def: def
 				});
 		}
 
@@ -778,10 +771,7 @@ DB = (function () {
 			return literal(opt,
 				{
 					type: 'number',
-					
-					coerce: function (val) {
-						return (typeof val === 'number' && !isNaN(val)) ? val : def;
-					}
+					def: def
 				});
 		}
 
@@ -791,48 +781,32 @@ DB = (function () {
 			return literal(opt,
 				{
 					type: 'boolean',
-					
-					coerce: function (val) {
-						return (typeof val === 'boolean') ? val : def;
-					}
+					def: def
 				});
 		}
 
 		function list_property(prop, opt) {
 			opt = isObject(opt) ? opt : {};
-			var def = (isArray(opt.def) ? opt.def : []),
-				coerce = opt.coerce,
+			var coerce = opt.coerce,
 				index = opt.index;
 
 			return {
 				type: 'list',
 				tree: prop,
-
-				coerce: ((typeof coerce === 'function') ?
-					coerce :
-					function (val) {
-						return isArray(val) ? val : def;
-					}),
-
+				def: [],
 				index: ((typeof index === 'function') ? index : null)
 			};
 		}
 
 		function dict_property(props, opt) {
 			opt = isObject(opt) ? opt : {};
-			var def = (isObject(opt.def) ? opt.def : {}),
-				coerce = opt.coerce,
+			var coerce = opt.coerce,
 				index = opt.index;
 
 			return {
 				type: 'dict',
+				def: {},
 				tree: props,
-
-				coerce: (typeof coerce === 'function' ? coerce :
-					function (val) {
-						return isArray(val) ? val : def;
-					}),
-
 				index: ((typeof index === 'function') ? index : null)
 			};
 		}

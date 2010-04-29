@@ -228,7 +228,7 @@ function run_tests() {
 		stop();
 
 		function cb(x) {
-			equal(typeof(x.request), "function", "got connection");
+			equals(typeof(x.request), "function", "got connection");
 			start();
 		}
 
@@ -388,10 +388,16 @@ function run_tests() {
 			});
 	});
 
-	test("get entities by kind and delete", 5, function () {
+	test("query", 5, function () {
+
+		dump("\n ### START query test\n");
 
 		function a_cb(x) {
-			equal(x.length, 1, "kind query");
+			equals(x.length, 2, "kind query");
+		}
+
+		function b_cb(x) {
+			equals(x.length, 1, "name query");
 			if (typeof x[0] === "function") {
 				equals(JSON.stringify(x[0]("entity")),
 					JSON.stringify({
@@ -399,12 +405,70 @@ function run_tests() {
 					addresses: [{street: '', city: '', state: '', zip: ''}],
 					phones: [{phone: '', label: ''}],
 					emails: [{email: '', label: ''}]
-				}), "kind query");
+				}), "name query");
 			}
 		}
 
+		function c_cb(x) {
+			equals(x.length, 1, "name query");
+			if (typeof x[0] === "function") {
+				equals(JSON.stringify(x[0]("entity")),
+					JSON.stringify({
+					names: [{first: 'never', last: 'delete'}],
+					addresses: [{street: '', city: '', state: '', zip: ''}],
+					phones: [{phone: '', label: ''}],
+					emails: [{email: '', label: ''}]
+				}), "'never delete' query");
+			}
+			start();
+		}
+
+		stop();
+		db
+			.query()
+			.kind("customer")
+			.append(a_cb)
+			.query()
+			.eq("last_name", "chew")
+			.append(b_cb)
+			.query()
+			.eq("last_name", "delete")
+			.append(c_cb)
+			.go(function (x) {
+				ok(false, "db exception: "+ x);
+				start();
+			});
+	});
+
+	test("another user session", 6, function () {
+		function cb(x) {
+			db = x;
+			equals(typeof db.create, "function", " ; "+ typeof db.create);
+			equals(typeof db.get, "function", " ; "+ typeof db.get);
+			equals(typeof db.put, "function", " ; "+ typeof db.put);
+			equals(typeof db.del, "function", " ; "+ typeof db.del);
+			equals(typeof db.query, "function", " ; "+ typeof db.query);
+			equals(typeof db.go, "function", " ; "+ typeof db.go);
+			start();
+		}
+
+		function eb(x) {
+			ok(false, "db exception: "+ x);
+			start();
+		}
+
+		stop();
+		ddd.db("foobox", username, passkey)(cb, eb);
+	});
+
+	test("get entities by kind and delete", 4, function () {
+
+		function a_cb(x) {
+			equals(x.length, 2, "kind query");
+		}
+
 		function b_cb(x) {
-			equal(x.length, 1, "name query");
+			equals(x.length, 1, "name query");
 			if (typeof x[0] === "function") {
 				equals(JSON.stringify(x[0]("entity")),
 					JSON.stringify({
