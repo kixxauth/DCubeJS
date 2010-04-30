@@ -1,6 +1,16 @@
 DCubeJS Release Notes
 =====================
 
+### Version 0.3 April 30th, 2010
+--------------------------------
+
+And, a couple of days later, another bug. When new entities were created
+using the .db api, the shadow of a previously created entity of the same
+kind became the default of the new entity. This problem was found
+in a mutable object / prototypal inheritence oversight and fixed by
+copying the object instead.
+
+
 ### Version 0.2 April 26th, 2010
 --------------------------------
 
