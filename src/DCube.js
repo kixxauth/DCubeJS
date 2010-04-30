@@ -426,7 +426,10 @@ DB = (function () {
 	var cache = {}, models = {}, uid;
 
 	function entity(spec, mapper) {
-		var update;
+		var key = spec.key,
+			struct = JSON.parse(JSON.stringify(spec.data)),
+			index = JSON.parse(JSON.stringify(spec.indexes)),
+			update;
 
 		function update_array(a, b) {
 			a = isArray(a) ? a : [];
@@ -462,22 +465,22 @@ DB = (function () {
 			switch (method) {
 
 			case 'key':
-				return spec.key;
+				return key;
 
 			case 'entity':
 				// Return a cheap copy.
-				return JSON.parse(JSON.stringify(spec.data));
+				return JSON.parse(JSON.stringify(struct));
 
 			case 'indexes':
 				// Return a cheap copy.
-				return JSON.parse(JSON.stringify(spec.indexes));
+				return JSON.parse(JSON.stringify(index));
 
 			case 'update':
-				spec.data = mapper(update(spec.data, arguments[1]));
-				return JSON.parse(JSON.stringify(spec.data));
+				struct = mapper(update(struct, arguments[1]), index);
+				return JSON.parse(JSON.stringify(struct));
 
 			case 'delete':
-				spec.data = spec.indexes = null;
+				struct = index = null;
 				return true;
 
 			default:
@@ -595,25 +598,26 @@ DB = (function () {
 						else if (action === 'query') {
 							qresults = [];
 							push_result = make_push_result(qresults);
-							if (status !== 200) {
-								this_results[i](qresults);
-								return;
-							}
-							indexes = {};
-							for (n = 0; n < item.results.length; n += 1) {
-								for (p in item.results[n]) {
-									if (item.results[n].hasOwnProperty(p) &&
-											p !== 'key' && p !== 'entity') {
-										indexes[p] = item.results[n][p];
+							if (status === 200) {
+								indexes = {};
+								for (n = 0; n < item.results.length; n += 1) {
+									for (p in item.results[n]) {
+										if (item.results[n].hasOwnProperty(p) &&
+												p !== 'key' && p !== 'entity') {
+											indexes[p] = item.results[n][p];
+										}
 									}
+									update_entity({
+										key: item.results[n].key,
+										entity: item.results[n].entity,
+										indexes: indexes
+									}, push_result);
 								}
-								update_entity({
-									key: item.results[n].key,
-									entity: item.results[n].entity,
-									indexes: indexes
-								}, push_result);
+								this_results[i](qresults);
 							}
-							this_results[i](qresults);
+							else {
+								this_results[i](qresults);
+							}
 						}
 						else {
 							LOG.warn('DB.go():: Unknown query response action: "'+ action +'".');
@@ -787,8 +791,7 @@ DB = (function () {
 
 		function list_property(prop, opt) {
 			opt = isObject(opt) ? opt : {};
-			var coerce = opt.coerce,
-				index = opt.index;
+			var index = opt.index;
 
 			return {
 				type: 'list',
@@ -800,8 +803,7 @@ DB = (function () {
 
 		function dict_property(props, opt) {
 			opt = isObject(opt) ? opt : {};
-			var coerce = opt.coerce,
-				index = opt.index;
+			var index = opt.index;
 
 			return {
 				type: 'dict',
@@ -853,8 +855,8 @@ DB = (function () {
 			idx.kind = kind;
 			ent = map_model(model, ent, idx);
 
-			function mapper(data) {
-				return map_model(model, data, idx);
+			function mapper(data, index) {
+				return map_model(model, data, index);
 			}
 
 			if (key) {

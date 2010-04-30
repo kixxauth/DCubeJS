@@ -390,8 +390,6 @@ function run_tests() {
 
 	test("query", 5, function () {
 
-		dump("\n ### START query test\n");
-
 		function a_cb(x) {
 			equals(x.length, 2, "kind query");
 		}
@@ -461,23 +459,71 @@ function run_tests() {
 		ddd.db("foobox", username, passkey)(cb, eb);
 	});
 
+	test("create another entity", 4, function () {
+		function put_cb(x) {
+			equals(JSON.stringify(x("entity")),
+				JSON.stringify({
+				names: [{first: 'foowoman', last: 'chew'}],
+				addresses: [{street: '', city: '', state: '', zip: ''}],
+				phones: [{phone: '', label: ''}],
+				emails: [{email: '', label: ''}]
+			}), "put customer");
+		}
+
+		function get_cb(x) {
+			equals(JSON.stringify(x("entity")),
+				JSON.stringify({
+				names: [{first: 'foowoman', last: 'chew'}],
+				addresses: [{street: '', city: '', state: '', zip: ''}],
+				phones: [{phone: '', label: ''}],
+				emails: [{email: '', label: ''}]
+			}), "get customer");
+			start();
+		}
+
+		var customer = db.create("customer");
+
+		equals(JSON.stringify(customer("entity")),
+			JSON.stringify({
+			names: [{first: '', last: ''}],
+			addresses: [{street: '', city: '', state: '', zip: ''}],
+			phones: [{phone: '', label: ''}],
+			emails: [{email: '', label: ''}]
+		}), "new customer");
+
+		customer("update", {
+			names: [{
+				first: 'foowoman',
+				last: 'chew'
+			}]
+		});
+
+		equals(JSON.stringify(customer("entity")),
+			JSON.stringify({
+			names: [{first: 'foowoman', last: 'chew'}],
+			addresses: [{street: '', city: '', state: '', zip: ''}],
+			phones: [{phone: '', label: ''}],
+			emails: [{email: '', label: ''}]
+		}), "new customer");
+
+		stop();
+		db
+			.put(customer, put_cb)
+			.get(customer('key'), get_cb)
+			.go(function (x) {
+				ok(false, "db exception: "+ x);
+				start();
+			});
+	});
+
 	test("get entities by kind and delete", 4, function () {
 
 		function a_cb(x) {
-			equals(x.length, 2, "kind query");
+			equals(x.length, 3, "kind query");
 		}
 
 		function b_cb(x) {
-			equals(x.length, 1, "name query");
-			if (typeof x[0] === "function") {
-				equals(JSON.stringify(x[0]("entity")),
-					JSON.stringify({
-					names: [{first: 'fooman', last: 'chew'}],
-					addresses: [{street: '', city: '', state: '', zip: ''}],
-					phones: [{phone: '', label: ''}],
-					emails: [{email: '', label: ''}]
-				}), "name query");
-			}
+			equals(x.length, 2, "name query");
 
 			// Garbage collect the leftovers
 			function del_cb(x) {
@@ -489,14 +535,19 @@ function run_tests() {
 				}
 			}
 
-			db.del(x[0]('key'), function (x) {
-				ok(x === true, "deleted");
+			if (typeof x[0] === "function") {
+				db.del(x[0]('key'), function (x) {
+						ok(x === true, "deleted");
+						start();
+					})
+					.go(function (x) {
+						ok(false, "db exception: "+ x);
+						start();
+					});
+			}
+			else {
 				start();
-			})
-			.go(function (x) {
-				ok(false, "db exception: "+ x);
-				start();
-			});
+			}
 		}
 
 		stop();
