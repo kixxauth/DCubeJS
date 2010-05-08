@@ -500,7 +500,7 @@ function run_tests() {
 		ddd.db("foobox", username, passkey)(cb, eb);
 	});
 
-	test("create another entity", 4, function () {
+	test("create another entity", 5, function () {
 		function put_cb(x) {
 			equals(JSON.stringify(x("entity")),
 				JSON.stringify({
@@ -548,9 +548,20 @@ function run_tests() {
 		}), "new customer");
 
 		stop();
+		var starttime = new Date().getTime();
 		db
-			.put(customer, put_cb)
-			.get(customer('key'), get_cb)
+			.get(customer('key'), function (x) {
+				var endtime = new Date().getTime();
+				ok((endtime - starttime) < 10, 'time: '+ (endtime - starttime));
+
+				db
+					.put(customer, put_cb)
+					.get(customer('key'), get_cb)
+					.go(function (x) {
+						ok(false, "db exception: "+ x);
+						start();
+					});
+			})
 			.go(function (x) {
 				ok(false, "db exception: "+ x);
 				start();
