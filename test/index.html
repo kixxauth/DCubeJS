@@ -552,7 +552,7 @@ function run_tests() {
 		db
 			.get(customer('key'), function (x) {
 				var endtime = new Date().getTime();
-				ok((endtime - starttime) < 10, 'time: '+ (endtime - starttime));
+				ok((endtime - starttime) < 30, 'time: '+ (endtime - starttime));
 
 				db
 					.put(customer, put_cb)
