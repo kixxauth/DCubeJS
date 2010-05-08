@@ -476,7 +476,8 @@ DB = (function () {
 				return JSON.parse(JSON.stringify(index));
 
 			case 'update':
-				struct = mapper(update(struct, arguments[1]), index);
+				struct = JSON.parse(JSON.stringify(
+							mapper(update(struct, arguments[1]), index)));
 				return JSON.parse(JSON.stringify(struct));
 
 			case 'delete':
